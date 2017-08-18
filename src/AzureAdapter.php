@@ -1,6 +1,6 @@
 <?php
 
-namespace League\Flysystem\Azure;
+namespace Ijin82\Flysystem\Azure;
 
 use League\Flysystem\Adapter\AbstractAdapter;
 use League\Flysystem\Adapter\Polyfill\NotSupportingVisibilityTrait;
@@ -50,14 +50,21 @@ class AzureAdapter extends AbstractAdapter
      *
      * @param IBlob  $azureClient
      * @param string $container
-     * @param string $prefix
      */
-    public function __construct(IBlob $azureClient, $container, $prefix = null, $fsConfig = [])
+    public function __construct(IBlob $azureClient, $config = [], $prefix = null)
     {
         $this->client = $azureClient;
-        $this->container = $container;
-        $this->fsConfig = $fsConfig;
+        $this->container = $config['container'];
+        $this->fsConfig = $config;
         $this->setPathPrefix($prefix);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getUrl($file)
+    {
+        return $this->fsConfig['blob_service_url'] . '/' . $this->container . '/' . $file;
     }
 
     /**
@@ -150,7 +157,7 @@ class AzureAdapter extends AbstractAdapter
      */
     public function createDir($dirname, Config $config)
     {
-        $this->write(rtrim($dirname, '/') . '/', ' ', $config);
+        $this->write(rtrim($dirname, '/').'/', ' ', $config);
 
         return ['path' => $dirname, 'type' => 'dir'];
     }
@@ -220,7 +227,7 @@ class AzureAdapter extends AbstractAdapter
         $options = new ListBlobsOptions();
         $options->setPrefix($directory);
 
-        if ( ! $recursive) {
+        if (!$recursive) {
             $options->setDelimiter('/');
         }
 
@@ -233,11 +240,8 @@ class AzureAdapter extends AbstractAdapter
             $contents[] = $this->normalizeBlobProperties($blob->getName(), $blob->getProperties());
         }
 
-        if ( ! $recursive) {
-            $contents = array_merge(
-                $contents,
-                array_map([$this, 'normalizeBlobPrefix'], $listResults->getBlobPrefixes())
-            );
+        if (!$recursive) {
+            $contents = array_merge($contents, array_map([$this, 'normalizeBlobPrefix'], $listResults->getBlobPrefixes()));
         }
 
         return Util::emulateDirectories($contents);
@@ -358,9 +362,9 @@ class AzureAdapter extends AbstractAdapter
     /**
      * Upload a file.
      *
-     * @param string          $path     Path
-     * @param string|resource $contents Either a string or a stream.
-     * @param Config          $config   Config
+     * @param string           $path     Path
+     * @param string|resource  $contents Either a string or a stream.
+     * @param Config           $config   Config
      *
      * @return array
      */
@@ -369,12 +373,7 @@ class AzureAdapter extends AbstractAdapter
         $path = $this->applyPathPrefix($path);
 
         /** @var CopyBlobResult $result */
-        $result = $this->client->createBlockBlob(
-            $this->container,
-            $path,
-            $contents,
-            $this->getOptionsFromConfig($config)
-        );
+        $result = $this->client->createBlockBlob($this->container, $path, $contents, $this->getOptionsFromConfig($config));
 
         return $this->normalize($path, $result->getLastModified()->format('U'), $contents);
     }
@@ -391,7 +390,7 @@ class AzureAdapter extends AbstractAdapter
         $options = new CreateBlobOptions();
 
         foreach (static::$metaOptions as $option) {
-            if ( ! $config->has($option)) {
+            if (!$config->has($option)) {
                 continue;
             }
 
