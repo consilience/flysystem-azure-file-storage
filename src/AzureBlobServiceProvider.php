@@ -1,6 +1,6 @@
 <?php
 
-namespace Ijin82\Flysystem\Providers;
+namespace Ijin82\Flysystem\Azure;
 
 use Storage;
 use League\Flysystem\Filesystem;

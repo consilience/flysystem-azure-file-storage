@@ -23,7 +23,7 @@
     },
     "autoload": {
         "psr-4": {
-            "League\\Flysystem\\Azure\\": "src/"
+            "Ijin82\\Flysystem\\Azure\\": "src/"
         }
     },
     "config": {
