@@ -30,6 +30,11 @@ class AzureAdapter extends AbstractAdapter
     protected $client;
 
     /**
+     * @var array
+     */
+    protected $fsConfig;
+
+    /**
      * @var string[]
      */
     protected static $metaOptions = [
@@ -47,10 +52,11 @@ class AzureAdapter extends AbstractAdapter
      * @param string $container
      * @param string $prefix
      */
-    public function __construct(IBlob $azureClient, $container, $prefix = null)
+    public function __construct(IBlob $azureClient, $container, $prefix = null, $fsConfig = [])
     {
         $this->client = $azureClient;
         $this->container = $container;
+        $this->fsConfig = $fsConfig;
         $this->setPathPrefix($prefix);
     }
 
