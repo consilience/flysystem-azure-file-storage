@@ -3,10 +3,10 @@
 namespace Ijin82\Flysystem\Azure;
 
 use Storage;
+use Ijin82\Flysystem\Azure\AzureAdapter;
 use League\Flysystem\Filesystem;
 use MicrosoftAzure\Storage\Common\ServicesBuilder;
 use Illuminate\Support\ServiceProvider;
-use League\Flysystem\Azure\AzureAdapter;
 
 class AzureBlobServiceProvider extends ServiceProvider
 {
