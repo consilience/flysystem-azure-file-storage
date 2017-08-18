@@ -1,11 +1,15 @@
 {
-    "name": "league/flysystem-azure",
-    "description": "Flysystem adapter for Windows Azure",
+    "name": "ijin82/flysystem-azure",
+    "description": "Flysystem adapter for Windows Azure (Fork of league/flysystem-azure)",
     "license": "MIT",
     "authors": [
         {
             "name": "Frank de Jonge",
             "email": "info@frenky.net"
+        },
+        {
+            "name": "Ilya Rogojin",
+            "email": "ilya.rogojin@gmail.com"
         }
     ],
     "require": {
