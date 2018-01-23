@@ -3,9 +3,8 @@
 namespace Ijin82\Flysystem\Azure;
 
 use Storage;
-use Ijin82\Flysystem\Azure\AzureAdapter;
 use League\Flysystem\Filesystem;
-use MicrosoftAzure\Storage\Common\ServicesBuilder;
+use MicrosoftAzure\Storage\Blob\BlobRestProxy;
 use Illuminate\Support\ServiceProvider;
 
 class AzureBlobServiceProvider extends ServiceProvider
@@ -18,8 +17,10 @@ class AzureBlobServiceProvider extends ServiceProvider
     public function boot()
     {
         Storage::extend('azure_blob', function ($app, $config) {
-            $blobService = ServicesBuilder::getInstance()
-                ->createBlobService($config['endpoint']);
+            $blobService = BlobRestProxy::createBlobService(
+                $config['endpoint'],
+                [] // $optionsWithMiddlewares
+            );
 
             return new Filesystem(new AzureAdapter(
                 $blobService,

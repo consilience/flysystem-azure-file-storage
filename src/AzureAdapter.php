@@ -11,9 +11,10 @@ use MicrosoftAzure\Storage\Blob\Models\BlobPrefix;
 use MicrosoftAzure\Storage\Blob\Models\BlobProperties;
 use MicrosoftAzure\Storage\Blob\Models\CopyBlobResult;
 use MicrosoftAzure\Storage\Blob\Models\CreateBlobOptions;
+use MicrosoftAzure\Storage\Blob\Models\CreateBlockBlobOptions;
 use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 use MicrosoftAzure\Storage\Blob\Models\ListBlobsResult;
-use MicrosoftAzure\Storage\Common\ServiceException;
+use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
 class AzureAdapter extends AbstractAdapter
 {
@@ -170,7 +171,7 @@ class AzureAdapter extends AbstractAdapter
         $path = $this->applyPathPrefix($path);
 
         try {
-            $this->client->getBlobMetadata($this->container, $path);
+            $this->client->getBlobProperties($this->container, $path);
         } catch (ServiceException $e) {
             if ($e->getCode() !== 404) {
                 throw $e;
@@ -373,7 +374,12 @@ class AzureAdapter extends AbstractAdapter
         $path = $this->applyPathPrefix($path);
 
         /** @var CopyBlobResult $result */
-        $result = $this->client->createBlockBlob($this->container, $path, $contents, $this->getOptionsFromConfig($config));
+        $result = $this->client->createBlockBlob(
+            $this->container,
+            $path,
+            $contents,
+            $this->getOptionsFromConfig($config)
+        );
 
         return $this->normalize($path, $result->getLastModified()->format('U'), $contents);
     }
@@ -387,7 +393,7 @@ class AzureAdapter extends AbstractAdapter
      */
     protected function getOptionsFromConfig(Config $config)
     {
-        $options = new CreateBlobOptions();
+        $options = new CreateBlockBlobOptions();
 
         foreach (static::$metaOptions as $option) {
             if (!$config->has($option)) {
