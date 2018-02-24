@@ -1,6 +1,6 @@
 {
-    "name": "ijin82/flysystem-azure",
-    "description": "Flysystem adapter for Windows Azure (Fork of league/flysystem-azure)",
+    "name": "consilience/flysystem-azure-file",
+    "description": "Flysystem adapter for Windows Azure File Storage",
     "license": "MIT",
     "authors": [
         {
@@ -10,12 +10,16 @@
         {
             "name": "Ilya Rogojin",
             "email": "ilya.rogojin@gmail.com"
+        },
+        {
+            "name": "Consilience Media Ltd",
+            "email": "webteam@consil.co.uk"
         }
     ],
     "require": {
         "php": ">=5.5.0",
         "league/flysystem": "~1.0",
-        "microsoft/azure-storage-blob": "^1.0"
+        "microsoft/azure-storage-file": "^1.0"
     },
     "require-dev": {
         "phpunit/phpunit": "~4.0",
@@ -23,7 +27,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Ijin82\\Flysystem\\Azure\\": "src/"
+            "Consilience\\Flysystem\\Azure\\": "src/"
         }
     },
     "config": {
