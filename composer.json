@@ -1,5 +1,5 @@
 {
-    "name": "consilience/flysystem-azure-file",
+    "name": "consilience/flysystem-azure-file-storage",
     "description": "Flysystem adapter for Windows Azure File Storage",
     "license": "MIT",
     "authors": [
@@ -21,7 +21,7 @@
         }
     ],
     "require": {
-        "php": ">=5.5.0",
+        "php": ">=5.6.0",
         "league/flysystem": "~1.0",
         "microsoft/azure-storage-file": "^1.0"
     },
