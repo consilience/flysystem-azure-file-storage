@@ -42,6 +42,12 @@ $config = [
     //'disableRecursiveDelete' => true,
 ];
 
+$fileService = FileRestProxy::createFileService(
+    $connectionString,,
+    [] // $optionsWithMiddlewares
+);
+
+
 $filesystem = new Filesystem(new AzureFileAdapter(
     $fileService,
     $config,

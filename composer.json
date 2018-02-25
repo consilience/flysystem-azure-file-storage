@@ -14,6 +14,10 @@
         {
             "name": "Consilience Media Ltd",
             "email": "webteam@consil.co.uk"
+        },
+        {
+            "name": "Jason Judge",
+            "email": "jason@academe.co.uk"
         }
     ],
     "require": {
