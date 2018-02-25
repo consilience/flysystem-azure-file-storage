@@ -15,7 +15,7 @@ I separate service provider package for Laravel 5.5+ will be available.
 
 Install package
 ```bash
-composer require consilience/flysystem-azure-file
+composer require consilience/flysystem-azure-file-storage
 ```
 
 # How to use this driver
@@ -51,7 +51,7 @@ $fileService = FileRestProxy::createFileService(
 $filesystem = new Filesystem(new AzureFileAdapter(
     $fileService,
     $config,
-    '' // Optional base directory
+    '' // Optional driver options.
 ));
 
 // Now the $filesystem object can be used as a standard
