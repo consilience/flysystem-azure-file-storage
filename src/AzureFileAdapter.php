@@ -6,6 +6,8 @@ use League\Flysystem\Adapter\AbstractAdapter;
 use League\Flysystem\Adapter\Polyfill\NotSupportingVisibilityTrait;
 use League\Flysystem\Config;
 use League\Flysystem\Util;
+use League\Flysystem\FileNotFoundException;
+
 use MicrosoftAzure\Storage\File\Internal\IFile;
 use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesOptions;
 use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesResult;
@@ -13,6 +15,8 @@ use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesResult;
 use MicrosoftAzure\Storage\File\Models\FileProperties;
 use MicrosoftAzure\Storage\File\Models\GetDirectoryPropertiesResult;
 use MicrosoftAzure\Storage\File\Models\CreateFileFromContentOptions;
+
+use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
 class AzureFileAdapter extends AbstractAdapter
 {
@@ -329,6 +333,8 @@ class AzureFileAdapter extends AbstractAdapter
 
         $result['contents'] = stream_get_contents($result['stream']);
 
+        unset($result['stream']);
+
         return $result;
     }
 
@@ -339,7 +345,15 @@ class AzureFileAdapter extends AbstractAdapter
     {
         $pathName = $this->applyPathPrefix($pathName);
 
-        $fileResult = $this->client->getFile($this->container, $pathName);
+        try {
+            $fileResult = $this->client->getFile($this->container, $pathName);
+        } catch (ServiceException $e) {
+            if ($e->getCode() === 404) {
+                throw new FileNotFoundException($pathName, $e->getCode(), $e);
+            }
+
+            throw $e;
+        }
 
         return array_merge(
             $this->normalizeFileProperties($pathName, $fileResult->getProperties()),
@@ -369,12 +383,20 @@ class AzureFileAdapter extends AbstractAdapter
 
         $directory = trim($directory, '/');
 
-        /** @var ListDirectoriesAndFilesResult $listResults */
-        $listResults = $this->client->listDirectoriesAndFiles(
-            $this->container,
-            $directory,
-            $options
-        );
+        try {
+            /** @var ListDirectoriesAndFilesResult $listResults */
+            $listResults = $this->client->listDirectoriesAndFiles(
+                $this->container,
+                $directory,
+                $options
+            );
+        } catch (ServiceException $e) {
+            if ($e->getCode() === 404) {
+                throw new FileNotFoundException($directory, $e->getCode(), $e);
+            }
+
+            throw $e;
+        }
 
         $contents = [];
 

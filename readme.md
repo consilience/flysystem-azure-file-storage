@@ -4,12 +4,10 @@
 
 This repo is fork of [League\Flysystem\Azure](https://github.com/thephpleague/flysystem-azure)
 
-# Why forked?
-
-The original Azure Flysystem adapter supported Blobs.
-This alternative adapter supports Azure File Storage, with directory support.
-
-I separate service provider package for Laravel 5.5+ will be available.
+I separate service provider package for Laravel 5.5+ is available here:
+https://github.com/academe/laravel-azure-file-storage-driver
+The service provider allows Azure File Storage shares tbe be used
+as native filesystems within Laravel.
 
 # How to install
 
@@ -56,13 +54,13 @@ $filesystem = new Filesystem(new AzureFileAdapter(
 
 // Now the $filesystem object can be used as a standard
 // Flysystem file system.
+// See https://flysystem.thephpleague.com/api/
+
+// A few examples:
 
 $content = $filesystem->read('path/to/my/file.txt');
 $resource = $filesystem->readResource('path/to/my/file.txt');
 $success = $filesystem->createDir('new/directory/here');
 $success = $filesystem->rename('path/to/my/file.txt', 'some/other/folder/another.txt');
-
-// etc.
-
 ```
 
