@@ -1,4 +1,8 @@
-[![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat-square)](LICENSE)
+
+[![Latest Stable Version](https://poser.pugx.org/consilience/flysystem-azure-file-storage/v/stable)](https://packagist.org/packages/consilience/flysystem-azure-file-storage)
+[![Total Downloads](https://poser.pugx.org/consilience/flysystem-azure-file-storage/downloads)](https://packagist.org/packages/consilience/flysystem-azure-file-storage)
+[![Latest Unstable Version](https://poser.pugx.org/consilience/flysystem-azure-file-storage/v/unstable)](https://packagist.org/packages/consilience/flysystem-azure-file-storage)
+[![License](https://poser.pugx.org/consilience/flysystem-azure-file-storage/license)](https://packagist.org/packages/consilience/flysystem-azure-file-storage)
 
 # Azure File Storage adapater for Flysystem
 
