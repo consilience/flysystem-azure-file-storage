@@ -63,6 +63,8 @@ class AzureFileAdapter extends AbstractAdapter
     }
 
     /**
+     * Issue #2 Encode the path parts but not the directory separators.
+     *
      * @param string $pathName the normalised file pathname
      * @return string URL for the file, needed for some API methods
      */
@@ -72,7 +74,13 @@ class AzureFileAdapter extends AbstractAdapter
             '%s%s/%s',
             (string)$this->client->getPsrPrimaryUri(),
             $this->container,
-            rawurlencode($pathName)
+            implode(
+                '/',
+                array_map(
+                    'rawurlencode',
+                    explode('/', $pathName)
+                )
+            )
         );
     }
 
