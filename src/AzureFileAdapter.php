@@ -72,7 +72,7 @@ class AzureFileAdapter extends AbstractAdapter
             '%s%s/%s',
             (string)$this->client->getPsrPrimaryUri(),
             $this->container,
-            urlencode($pathName)
+            rawurlencode($pathName)
         );
     }
 
