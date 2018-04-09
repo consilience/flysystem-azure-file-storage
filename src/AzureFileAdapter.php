@@ -72,7 +72,7 @@ class AzureFileAdapter extends AbstractAdapter
             '%s%s/%s',
             (string)$this->client->getPsrPrimaryUri(),
             $this->container,
-            $pathName
+            rawurlencode($pathName)
         );
     }
 
@@ -247,7 +247,7 @@ class AzureFileAdapter extends AbstractAdapter
     {
         $dirname = trim($this->applyPathPrefix($dirname), '/');
 
-        if ($dirname === '') {
+        if ($dirname === '' || $dirname === '.') {
             // There is no directory to create.
 
             return ['path' => $dirname, 'type' => 'dir'];
