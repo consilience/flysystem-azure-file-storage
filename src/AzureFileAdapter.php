@@ -68,7 +68,7 @@ class AzureFileAdapter extends AbstractAdapter
      * @param string $pathName the normalised file pathname
      * @return string URL for the file, needed for some API methods
      */
-    protected function getUrl($pathName)
+    public function getUrl($pathName)
     {
         return sprintf(
             '%s%s/%s',

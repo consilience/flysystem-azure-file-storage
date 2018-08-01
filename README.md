@@ -74,6 +74,10 @@ $content    = $filesystem->read('path/to/my/file.txt');
 $resource   = $filesystem->readResource('path/to/my/file.txt');
 $success    = $filesystem->createDir('new/directory/here');
 $success    = $filesystem->rename('path/to/my/file.txt', 'some/other/folder/another.txt');
+
+// The URL of a file can be found like this:
+
+$url = $filesystem->getAdapter()->getUrl('path/to/my/foo.bar');
 ```
 
 ## Testing
