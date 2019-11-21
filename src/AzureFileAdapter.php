@@ -594,12 +594,12 @@ class AzureFileAdapter extends AbstractAdapter
 
         $this->createDir(dirname($path), $config);
 
-        $path = $this->applyPathPrefix($path);
+        $location = $this->applyPathPrefix($path);
 
         // The result will be null, or an exception.
         $this->client->createFileFromContent(
             $this->container,
-            $path,
+            $location,
             $contents,
             $this->getOptionsFromConfig($config)
         );
