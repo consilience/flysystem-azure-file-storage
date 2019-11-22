@@ -51,17 +51,18 @@ $config = [
     // Optional to prevent directory deletion recursively deleting
     // all descendant files and direcories.
     //'disableRecursiveDelete' => true,
+    // Optional driver options can also be added here. e.g. CacheControl, Metadata.
 ];
 
 $fileService = FileRestProxy::createFileService(
-    $connectionString,,
+    $connectionString,
     [] // $optionsWithMiddlewares
 );
 
 $filesystem = new Filesystem(new AzureFileAdapter(
     $fileService,
     $config,
-    [] // Optional driver options.
+    'optional-directory-prefix'
 ));
 
 // Now the $filesystem object can be used as a standard
