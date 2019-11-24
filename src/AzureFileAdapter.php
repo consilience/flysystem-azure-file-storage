@@ -133,16 +133,16 @@ class AzureFileAdapter extends AbstractAdapter
 
     public function copy($sourcePath, $newPath)
     {
-        $sourcePath = $this->applyPathPrefix($sourcePath);
-        $newPath = $this->applyPathPrefix($newPath);
+        $sourceLocation = $this->applyPathPrefix($sourcePath);
+        $newLocation = $this->applyPathPrefix($newPath);
 
         // The source file must be supplied as the full URL.
 
         try {
             $this->client->copyFile(
                 $this->container,
-                $newPath,
-                $this->getUrl($sourcePath)
+                $newLocation,
+                $this->getUrl($sourceLocation)
             );
         } catch (ServiceException $e) {
             if ($e->getCode() !== 404) {
@@ -160,14 +160,17 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function delete($path)
     {
-        $path = $this->applyPathPrefix($path);
+        $location = $this->applyPathPrefix($path);
 
         try {
-            $this->client->deleteFile($this->container, $path);
+            $this->client->deleteFile($this->container, $location);
         } catch (ServiceException $e) {
             if ($e->getCode() !== 404) {
                 throw $e;
             }
+
+            // CHECKME: If the file could not be found, then should it
+            // not still be considered a successful deletion?
 
             return false;
         }
@@ -184,7 +187,7 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function deleteDir($dirname)
     {
-        $prefixedDirname = $this->applyPathPrefix($dirname);
+        $location = $this->applyPathPrefix($dirname);
 
         // Allow the recursion to be disabled through an option.
 
@@ -192,13 +195,14 @@ class AzureFileAdapter extends AbstractAdapter
             // Remove the contents of the direcory.
 
             try {
-                $listResults = $this->getContents($prefixedDirname, true);
-            } catch (ServiceException $e) {
-                if ($e->getCode() !== 404) {
-                    throw $e;
-                }
+                $listResults = $this->getContents($location, true);
+            } catch (FileNotFoundException $e) {
+// FIXME: this no longer being throw
+                // If the directory we are trying to get teh contents of does
+                // not exist, then the desired state is reached; we want it gone
+                // and it is gone.
 
-                return false;
+                return true;
             }
 
             foreach (array_reverse($listResults) as $object) {
@@ -233,10 +237,10 @@ class AzureFileAdapter extends AbstractAdapter
      */
     protected function deleteEmptyDirectory($dirname)
     {
-        $dirname = $this->applyPathPrefix($dirname);
+        $location = $this->applyPathPrefix($dirname);
 
         try {
-            $this->client->deleteDirectory($this->container, $dirname);
+            $this->client->deleteDirectory($this->container, $location);
         } catch (ServiceException $e) {
             if ($e->getCode() !== 404) {
                 throw $e;
@@ -253,9 +257,9 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function createDir($dirname, Config $config)
     {
-        $dirname = trim($this->applyPathPrefix($dirname), '/');
+        $location = trim($this->applyPathPrefix($dirname), '/');
 
-        if ($dirname === '' || $dirname === '.') {
+        if ($location === '' || $location === '.') {
             // There is no directory to create.
 
             return ['path' => $dirname, 'type' => 'dir'];
@@ -263,10 +267,10 @@ class AzureFileAdapter extends AbstractAdapter
 
         // We need to recursively create the directories if we have a path.
 
-        $dirParts = explode('/', $dirname);
+        $locationParts = explode('/', $location);
 
-        for ($i = 1; $i <= count($dirParts); $i++) {
-            $partialDirectory = implode('/', array_slice($dirParts, 0, $i));
+        for ($i = 1; $i <= count($locationParts); $i++) {
+            $partialDirectory = implode('/', array_slice($locationParts, 0, $i));
 
             if (! $this->hasDirectory($partialDirectory)) {
                 $this->client->createDirectory($this->container, $partialDirectory, null); // TODO: options
@@ -281,27 +285,27 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function has($path)
     {
-        $path = $this->applyPathPrefix($path);
+        $location = $this->applyPathPrefix($path);
 
         // Try the resource as a file first.
 
-        if ($this->hasFile($path)) {
+        if ($this->hasFile($location)) {
             return true;
         }
 
         // Fallback: try the resource as a directory.
 
-        return $this->hasDirectory($path);
+        return $this->hasDirectory($location);
     }
 
     /**
      * See if a file exists.
      * The directory prefix has already been added.
      */
-    protected function hasFile($pathName)
+    protected function hasFile($location)
     {
         try {
-            $this->client->getFileProperties($this->container, $pathName);
+            $this->client->getFileProperties($this->container, $location);
 
             return true;
         } catch (ServiceException $e) {
@@ -317,10 +321,10 @@ class AzureFileAdapter extends AbstractAdapter
      * See if a directory exists.
      * The directory prefix has already been added.
      */
-    protected function hasDirectory($pathName)
+    protected function hasDirectory($location)
     {
         try {
-            $this->client->getDirectoryProperties($this->container, $pathName);
+            $this->client->getDirectoryProperties($this->container, $location);
         } catch (ServiceException $e) {
             if ($e->getCode() !== 404) {
                 throw $e;
@@ -351,10 +355,10 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function readStream($pathName)
     {
-        $pathName = $this->applyPathPrefix($pathName);
+        $location = $this->applyPathPrefix($pathName);
 
         try {
-            $fileResult = $this->client->getFile($this->container, $pathName);
+            $fileResult = $this->client->getFile($this->container, $location);
         } catch (ServiceException $e) {
             if ($e->getCode() === 404) {
                 throw new FileNotFoundException($pathName, $e->getCode(), $e);
@@ -374,9 +378,13 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function listContents($directory = '', $recursive = false)
     {
-        $directory = $this->applyPathPrefix($directory);
+        try {
+            $contents = $this->getContents($directory, $recursive);
+        } catch (FileNotFoundException $e) {
+            // Flysytem core is not expecting an exception.
 
-        $contents = $this->getContents($directory, $recursive);
+            return Util::emulateDirectories([]);
+        }
 
         return Util::emulateDirectories($contents);
     }
@@ -387,15 +395,25 @@ class AzureFileAdapter extends AbstractAdapter
      */
     protected function getContents($directory, $recursive = false)
     {
+        // Options include maxResults and prefix.
+        // The prefix is a matching filename prefix, which can be useful to extract
+        // files starting with a given string.
+        // $options->setPrefix('')
+
         $options = new ListDirectoriesAndFilesOptions();
 
         $directory = trim($directory, '/');
 
+        $location = $this->applyPathPrefix($directory);
+
+        $contents = [];
+
         try {
             /** @var ListDirectoriesAndFilesResult $listResults */
+
             $listResults = $this->client->listDirectoriesAndFiles(
                 $this->container,
-                $directory,
+                $location,
                 $options
             );
         } catch (ServiceException $e) {
@@ -405,8 +423,6 @@ class AzureFileAdapter extends AbstractAdapter
 
             throw $e;
         }
-
-        $contents = [];
 
         // Collect the directories.
 
@@ -440,11 +456,11 @@ class AzureFileAdapter extends AbstractAdapter
      */
     public function getMetadata($path)
     {
-        $path = $this->applyPathPrefix($path);
+        $location = $this->applyPathPrefix($path);
 
         try {
             /** @var \MicrosoftAzure\Storage\File\Models\FileProperties $result */
-            $result = $this->client->getFileProperties($this->container, $path);
+            $result = $this->client->getFileProperties($this->container, $location);
 
             return $this->normalizeFileProperties(
                 $path,
@@ -456,7 +472,7 @@ class AzureFileAdapter extends AbstractAdapter
             }
 
             /** @var \MicrosoftAzure\Storage\File\Models\GetDirectoryPropertiesResult $result */
-            $result = $this->client->getDirectoryProperties($this->container, $path);
+            $result = $this->client->getDirectoryProperties($this->container, $location);
 
             return $this->normalizeDirectoryProperties(
                 $path,
@@ -548,7 +564,7 @@ class AzureFileAdapter extends AbstractAdapter
      */
     protected function normalizeFileProperties($pathName, FileProperties $fileProperties = null)
     {
-        $pathName = $this->removePathPrefix($pathName);
+        //$pathName = $this->removePathPrefix($pathName); // !!!!
 
         $properties = [
             'type' => 'file',
@@ -581,22 +597,28 @@ class AzureFileAdapter extends AbstractAdapter
 
     /**
      * Upload a file.
+     * This will overwrite a file if it already exists.
      *
      * @param string           $path     Path
      * @param string|resource  $contents Either a string or a stream.
      * @param Config           $config   Config
      *
-     * @return array
+     * @return array|false
      */
     protected function upload($path, $contents, Config $config)
     {
         // Make sure the directory has been created first.
 
-        $this->createDir(dirname($path), $config);
+        $dirname = dirname($path);
+
+        if (! empty($dirname)) {
+            $this->createDir($dirname, $config);
+        }
 
         $location = $this->applyPathPrefix($path);
 
         // The result will be null, or an exception.
+
         $this->client->createFileFromContent(
             $this->container,
             $location,
