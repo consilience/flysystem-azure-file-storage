@@ -619,7 +619,7 @@ class AzureFileAdapter extends AbstractAdapter
     {
         // Make sure the directory has been created first.
 
-        $this->createDir(dirname($path), $config);
+        $this->createDir(Util::dirname($path), $config);
 
         $location = $this->applyPathPrefix($path);
 
