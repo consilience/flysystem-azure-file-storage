@@ -197,8 +197,7 @@ class AzureFileAdapter extends AbstractAdapter
             try {
                 $listResults = $this->getContents($location, true);
             } catch (FileNotFoundException $e) {
-// FIXME: this no longer being throw
-                // If the directory we are trying to get teh contents of does
+                // If the directory we are trying to get the contents of does
                 // not exist, then the desired state is reached; we want it gone
                 // and it is gone.
 
@@ -367,9 +366,20 @@ class AzureFileAdapter extends AbstractAdapter
             throw $e;
         }
 
+        // Copy the remote stream to a local stream.
+        // The remote stream does not allow streaming into another remote file.
+        // I means we read the whole remote file, but we are not limited to what can
+        // be held in memory.
+
+        $stream = fopen('php://temp', 'w+');
+        stream_copy_to_stream($fileResult->getContentStream(), $stream);
+        rewind($stream);
+
         return array_merge(
             $this->normalizeFileProperties($pathName, $fileResult->getProperties()),
-            ['stream' => $fileResult->getContentStream()]
+            [
+                'stream' => $stream,
+            ]
         );
     }
 
@@ -549,7 +559,7 @@ class AzureFileAdapter extends AbstractAdapter
 
         if ($directoryProperties) {
             $properties['timestamp'] = $directoryProperties->getLastModified()->getTimestamp();
-            $properties['etag'] = $directoryProperties->getETag();
+            $properties['etag'] = trim($directoryProperties->getETag(), '"');
         }
 
         return $properties;
@@ -577,7 +587,7 @@ class AzureFileAdapter extends AbstractAdapter
             $properties['timestamp'] = $fileProperties->getLastModified()->getTimestamp();
 
             $properties['mimetype'] = $fileProperties->getContentType();
-            $properties['etag'] = $fileProperties->getETag();
+            $properties['etag'] = trim($fileProperties->getETag(), '"');
         }
 
         return $properties;
@@ -609,11 +619,7 @@ class AzureFileAdapter extends AbstractAdapter
     {
         // Make sure the directory has been created first.
 
-        $dirname = dirname($path);
-
-        if (! empty($dirname)) {
-            $this->createDir($dirname, $config);
-        }
+        $this->createDir(dirname($path), $config);
 
         $location = $this->applyPathPrefix($path);
 

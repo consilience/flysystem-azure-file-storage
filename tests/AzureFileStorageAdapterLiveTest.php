@@ -20,6 +20,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
 
     public const SUBDIR_ONE = 'test-subdir1';
     public const SUBDIR_TWO = 'test-subdir1/test-subdir2';
+    public const SUBDIR_THREE = 'test-subdir3';
 
     /**
      * Provides a live adapter based on config.
@@ -75,13 +76,13 @@ class AzureFileStorageAdapterLiveTest extends TestCase
             $config
         ));
 
-        $filesystemWithPrefix = new Filesystem(new AzureFileAdapter(
+        $filesystemPrefixOne = new Filesystem(new AzureFileAdapter(
             $fileService,
             $config,
             self::PREFIX_ONE
         ));
 
-        $filesystemWithDoublePrefix = new Filesystem(new AzureFileAdapter(
+        $filesystemPrefixTwo = new Filesystem(new AzureFileAdapter(
             $fileService,
             $config,
             self::PREFIX_TWO
@@ -92,8 +93,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
 
         return [
             'no-prefix' => ['filesystem' => $filesystem],
-            'single-prefix' => ['filesystem' => $filesystemWithPrefix],
-            'double-prefix' => ['filesystem' => $filesystemWithDoublePrefix],
+            'single-prefix' => ['filesystem' => $filesystemPrefixOne],
+            'double-prefix' => ['filesystem' => $filesystemPrefixTwo],
         ];
     }
 
@@ -161,6 +162,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // Create file and confirm it exists.
 
         $this->assertTrue($filesystem->write($this->filename(1), 'content'));
+
         $this->assertTrue($filesystem->has($this->filename(1)));
 
         // Create files two levels of subdirectory they exist.
@@ -404,5 +406,225 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // Visibility is not supported by this driver.
 
         $filesystem->getVisibility($this->filename(5));
+    }
+
+    /**
+     * @dataProvider adapterProvider
+     */
+    public function testRename($filesystem)
+    {
+        // Rename in same directory.
+
+        $this->assertTrue(
+            $filesystem->rename(
+                $this->filename(5),
+                $this->filename(15)
+            )
+        );
+
+        // Old name is gone.
+
+        $this->assertFalse(
+            $filesystem->has($this->filename(5))
+        );
+
+        // New name exists.
+
+        $this->assertTrue(
+            $filesystem->has($this->filename(15))
+        );
+
+        // Rename to an existing directory.
+
+        $this->assertTrue($filesystem->rename(
+            $this->filename(15),
+            $this->filename(15, self::SUBDIR_ONE)
+        ));
+
+        // Old name is gone.
+
+        $this->assertFalse(
+            $filesystem->has($this->filename(15))
+        );
+
+        // New name exists.
+
+        $this->assertTrue(
+            $filesystem->has($this->filename(15, self::SUBDIR_ONE))
+        );
+
+        // Rename to a non-existent directory (fails to move).
+
+        $this->assertFalse($filesystem->rename(
+            $this->filename(15, self::SUBDIR_ONE),
+            $this->filename(15, self::SUBDIR_THREE))
+        );
+
+        // Old name STILL exists.
+
+        $this->assertTrue(
+            $filesystem->has($this->filename(15, self::SUBDIR_ONE))
+        );
+    }
+
+    /**
+     * @dataProvider adapterProvider
+     */
+    public function testDeleteDir($filesystem)
+    {
+        // TBC
+    }
+
+    /**
+     * @dataProvider adapterProvider
+     */
+    public function testListContents($filesystem)
+    {
+        $allContents = $filesystem->listContents('', true);
+
+        $this->assertInternalType('array', $allContents);
+
+        // Look for the directories and files we have created.
+
+        // Files created in testHas() at three levels
+
+        $this->assertContains([
+            'type' => 'file',
+            'path' => $this->filename(1),
+            'dirname' => '',
+            'basename' => $this->filename(1),
+            'extension' => 'txt',
+            'filename' => basename($this->filename(1), '.txt'),
+        ], $allContents);
+
+        $this->assertContains([
+            'type' => 'file',
+            'path' => $this->filename(2, self::SUBDIR_ONE),
+            'dirname' => dirname($this->filename(2, self::SUBDIR_ONE)),
+            'basename' => $this->filename(2),
+            'extension' => 'txt',
+            'filename' => basename($this->filename(2), '.txt'),
+        ], $allContents);
+
+        $this->assertContains([
+            'type' => 'file',
+            'path' => $this->filename(3, self::SUBDIR_TWO),
+            'dirname' => dirname($this->filename(3, self::SUBDIR_TWO)),
+            'basename' => $this->filename(3),
+            'extension' => 'txt',
+            'filename' => basename($this->filename(3), '.txt'),
+        ], $allContents);
+
+        // Directories creates in testHas()
+        // TODO: check these meet the specs.
+
+        $directory = dirname($this->filename(3, self::SUBDIR_ONE));
+
+        $this->assertContains([
+            'type' => 'dir',
+            'path' => $directory,
+            'dirname' => (dirname($directory) === '.' ? '' : dirname($directory)),
+            'basename' => basename($directory),
+            'filename' => basename($directory),
+        ], $allContents);
+
+        $directory = dirname($this->filename(3, self::SUBDIR_TWO));
+
+        $this->assertContains([
+            'type' => 'dir',
+            'path' => $directory,
+            'dirname' => dirname($directory),
+            'basename' => basename($directory),
+            'filename' => basename($directory),
+        ], $allContents);
+
+        // Start a level or two up.
+
+        $subdirContents = $filesystem->listContents(self::SUBDIR_TWO, true);
+
+        $this->assertInternalType('array', $subdirContents);
+
+        // The full paths are as for the recursive list, but only comntain the
+        // two files in the selected direectory.
+
+        $this->assertCount(2, $subdirContents);
+
+        $this->assertContains([
+            'type' => 'file',
+            'path' => $this->filename(3, self::SUBDIR_TWO),
+            'dirname' => dirname($this->filename(3, self::SUBDIR_TWO)),
+            'basename' => $this->filename(3),
+            'extension' => 'txt',
+            'filename' => basename($this->filename(3), '.txt'),
+        ], $allContents);
+
+        // File 7 from testWriteDirTwo()
+
+        $this->assertContains([
+            'type' => 'file',
+            'path' => $this->filename(7, self::SUBDIR_TWO),
+            'dirname' => dirname($this->filename(7, self::SUBDIR_TWO)),
+            'basename' => $this->filename(7),
+            'extension' => 'txt',
+            'filename' => basename($this->filename(7), '.txt'),
+        ], $allContents);
+    }
+
+    /**
+     * @dataProvider adapterProvider
+     */
+    public function testGetMeta($filesystem)
+    {
+        //var_dump($filesystem->getMetadata($this->filename(1)));
+        // Note that minetype is the mimetype of the API endpoint, and not
+        // of the actual file. Some further research may be needed there.
+
+        $this->assertInternalType('int', $filesystem->getTimestamp($this->filename(1))); // Unix timetamp
+        $this->assertSame(7, $filesystem->getSize($this->filename(1))); // "content"
+    }
+
+    /**
+     * @dataProvider adapterProvider
+     */
+    public function testRead($filesystem)
+    {
+        $this->assertSame(
+            'content',
+            $filesystem->read($this->filename(1))
+        );
+
+        $this->assertSame(
+            'stream7',
+            $filesystem->read($this->filename(7, self::SUBDIR_TWO))
+        );
+    }
+
+    /**
+     * @dataProvider adapterProvider
+     */
+    public function testReadStream($filesystem)
+    {
+        $stream = $filesystem->readStream($this->filename(1));
+
+        $this->assertInternalType('resource', $stream);
+
+        $this->assertSame(
+            'content',
+            stream_get_contents($stream)
+        );
+
+        // Copy a file by stream.
+
+        $this->assertTrue(
+            $filesystem->writeStream(
+                $this->filename(10),
+                $filesystem->readStream($this->filename(1))
+            )
+        );
+
+        $this->assertSame(
+            'content',
+            $filesystem->read($this->filename(10))
+        );
     }
 }
