@@ -138,7 +138,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // https://github.com/thephpleague/flysystem/issues/1099
 
         $this->assertTrue($filesystem->deleteDir(self::PREFIX_ONE));
-        $this->assertTrue($filesystem->deleteDir(self::PREFIX_TWO));
+        $this->assertTrue($filesystem->deleteDir(dirname(self::PREFIX_TWO)));
 
         $this->assertTrue($filesystem->deleteDir(self::SUBDIR_ONE));
         $this->assertTrue($filesystem->deleteDir(self::SUBDIR_TWO));
