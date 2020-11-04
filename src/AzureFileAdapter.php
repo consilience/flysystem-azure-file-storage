@@ -552,8 +552,10 @@ class AzureFileAdapter extends AbstractAdapter
         $pathName,
         GetDirectoryPropertiesResult $directoryProperties = null
     ) {
+        // The library does not return the path prefixes, so there is no need to remove it.
+
         $properties = [
-            'path' => $this->removePathPrefix($pathName),
+            'path' => $pathName, //$this->removePathPrefix($pathName),
             'type' => 'dir',
         ];
 
