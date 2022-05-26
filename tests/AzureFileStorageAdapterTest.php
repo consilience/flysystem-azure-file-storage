@@ -13,60 +13,60 @@ use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
 class AzureFileStorageAdapterTest extends TestCase
 {
-    public function adapterProvider()
-    {
-        // Mock needs to be an instance of interface MicrosoftAzure\Storage\File\Internal\IFile
-        // implementation normally MicrosoftAzure\Storage\File\FileRestProxy
+    // public function adapterProvider()
+    // {
+    //     // Mock needs to be an instance of interface MicrosoftAzure\Storage\File\Internal\IFile
+    //     // implementation normally MicrosoftAzure\Storage\File\FileRestProxy
 
-        $mockAzureClient = Mockery::mock(FileRestProxy::class)->makePartial();
+    //     $mockAzureClient = Mockery::mock(FileRestProxy::class)->makePartial();
 
-        $adapter = new AzureFileAdapter($mockAzureClient, [
-            'container' => 'foo-container',
-        ]);
+    //     $adapter = new AzureFileAdapter($mockAzureClient, [
+    //         'container' => 'foo-container',
+    //     ]);
 
-        $filesystem = new Filesystem($adapter);
+    //     $filesystem = new Filesystem($adapter);
 
-        return [
-            [$filesystem, $adapter, $mockAzureClient],
-        ];
-    }
+    //     return [
+    //         [$filesystem, $adapter, $mockAzureClient],
+    //     ];
+    // }
 
     /**
      * @dataProvider adapterProvider
      */
-    public function testHas($filesystem, $adapter, $mockAzureClient)
-    {
-        $mockAzureClient->shouldReceive('getFileProperties')->andReturn([
-            'type'        => 'xxx',
-            'mtime'       => time(),
-            'size'        => 20,
-            'permissions' => 0777,
-        ]);
+    // public function testHas($filesystem, $adapter, $mockAzureClient)
+    // {
+    //     $mockAzureClient->shouldReceive('getFileProperties')->andReturn([
+    //         'type'        => 'xxx',
+    //         'mtime'       => time(),
+    //         'size'        => 20,
+    //         'permissions' => 0777,
+    //     ]);
 
-        $responseInterface = Mockery::mock(ResponseInterface::class)->makePartial();
-        $responseInterface->shouldReceive('getStatusCode')->andReturn(404);
-        $responseInterface->shouldReceive('getReasonPhrase')->andReturn('File not found');
-        $responseInterface->shouldReceive('getBody')->andReturn('');
+    //     $responseInterface = Mockery::mock(ResponseInterface::class)->makePartial();
+    //     $responseInterface->shouldReceive('getStatusCode')->andReturn(404);
+    //     $responseInterface->shouldReceive('getReasonPhrase')->andReturn('File not found');
+    //     $responseInterface->shouldReceive('getBody')->andReturn('');
 
-        /*$mockAzureClient->shouldReceive('getFileProperties')
-            ->willThrowException(new ServiceException($responseInterface));*/
+    //     $mockAzureClient->shouldReceive('getFileProperties')
+    //         ->willThrowException(new ServiceException($responseInterface));
 
-        /*$mockAzureClient->shouldReceive('getFileProperties')->will(
-            // First parameter must be ResponseInterface
+    //     $mockAzureClient->shouldReceive('getFileProperties')->will(
+    //         // First parameter must be ResponseInterface
 
-            (new ServiceException($responseInterface))
-        );*/
+    //         (new ServiceException($responseInterface))
+    //     );
 
-        /*$mock = $this->createMock(FileRestProxy::class);
-        $mock->expects($this->once())
-            ->method('getFileProperties')
-            ->willThrowException(new ServiceException($responseInterface));*/
+    //     $mock = $this->createMock(FileRestProxy::class);
+    //     $mock->expects($this->once())
+    //         ->method('getFileProperties')
+    //         ->willThrowException(new ServiceException($responseInterface));
 
-        //$this->assertTrue($filesystem->has('something'));
+    //     $this->assertTrue($filesystem->has('something'));
 
-        // Giving up. I just don't have the time to mock up Azure filesystem API
-        // in all its intricacies and details, including th exceptions that is throws.
+    //     // Giving up. I just don't have the time to mock up Azure filesystem API
+    //     // in all its intricacies and details, including th exceptions that is throws.
 
-        $this->assertTrue(true);
-    }
+    //     $this->assertTrue(true);
+    // }
 }

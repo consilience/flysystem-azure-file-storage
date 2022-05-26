@@ -1,14 +1,17 @@
 <?php
 
-use League\Flysystem\Filesystem;
-use League\Flysystem\FilesystemInterface;
-use Consilience\Flysystem\Azure\AzureFileAdapter;
+use Dotenv\Dotenv;
+use LogicException;
 use phpseclib\System\SSH\Agent;
 use PHPUnit\Framework\TestCase;
+use League\Flysystem\Filesystem;
 use Psr\Http\Message\ResponseInterface;
-
-use MicrosoftAzure\Storage\File\Internal\IFile;
+use League\Flysystem\FileExistsException;
+use League\Flysystem\FilesystemInterface;
+use League\Flysystem\FileNotFoundException;
 use MicrosoftAzure\Storage\File\FileRestProxy;
+use MicrosoftAzure\Storage\File\Internal\IFile;
+use Consilience\Flysystem\Azure\AzureFileAdapter;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
 class AzureFileStorageAdapterLiveTest extends TestCase
@@ -23,6 +26,17 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     public const SUBDIR_THREE = 'test-subdir3';
 
     /**
+     * @fixme does not work here; seems to get reset each test
+     */
+    // public function setUp(): void
+    // {
+    //     parent::setUp();
+
+    //     $dotenv = Dotenv::createUnsafeImmutable(__DIR__ . '/..');
+    //     $dotenv->load();
+    // }
+
+    /**
      * Provides a live adapter based on config.
      * There are three adapters - one with no prefex, one with a single level
      * prefix and one with a two level prefix.
@@ -30,6 +44,13 @@ class AzureFileStorageAdapterLiveTest extends TestCase
      */
     public function adapterProvider()
     {
+        // @fixme why does this work here, but not in the setup?
+        // It's like the environment is cleared after every iteration of a test
+        // but only set up prior to the first iteration.
+
+        $dotenv = Dotenv::createUnsafeImmutable(__DIR__ . '/..');
+        $dotenv->load();
+
         // Assert that required environment variables are set.
         // Will be bool (false) if not set at all.
 
@@ -194,7 +215,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
 
     /**
      * @dataProvider adapterProvider
-     * @expectedException League\Flysystem\FileExistsException
+     * @expectedException \League\Flysystem\FileExistsException
      */
     public function testWrite($filesystem)
     {
@@ -202,24 +223,30 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // Try writing again and we get an exception.
         // It is unclear what condition triggers a `false` return.
 
+        $this->expectException(FileExistsException::class);
+
         foreach ([1, 2] as $attempt) {
             $this->assertTrue($filesystem->write(
                 $this->filename(5),
                 'content',
-                ['visibility' => 'public'])
-            );
+                ['visibility' => 'public'],
+            ));
         }
+
+        $filesystem->delete($this->filename(5));
     }
 
     /**
      * @dataProvider adapterProvider
-     * @expectedException League\Flysystem\FileExistsException
+     * @expectedException \League\Flysystem\FileExistsException
      */
     public function testWriteDir($filesystem)
     {
         // write() will only create new files.
         // Try writing again and we get an exception.
         // It is unclear what condition triggers a `false` return.
+
+        $this->expectException(FileExistsException::class);
 
         foreach ([1, 2] as $attempt) {
             $this->assertTrue(
@@ -242,6 +269,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // Try writing again and we get an exception.
         // It is unclear what condition triggers a `false` return.
 
+        $this->expectException(FileExistsException::class);
+
         foreach ([1, 2] as $attempt) {
             $this->assertTrue(
                 $filesystem->write(
@@ -259,6 +288,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
      */
     public function testWriteStream($filesystem)
     {
+        $this->expectException(FileExistsException::class);
+
         foreach ([1, 2] as $attempt) {
             $this->assertTrue(
                 $filesystem->writeStream(
@@ -281,6 +312,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
      */
     public function testWriteStreamDirOne($filesystem)
     {
+        $this->expectException(FileExistsException::class);
+
         foreach ([1, 2] as $attempt) {
             $this->assertTrue(
                 $filesystem->writeStream(
@@ -310,12 +343,14 @@ class AzureFileStorageAdapterLiveTest extends TestCase
 
     /**
      * @dataProvider adapterProvider
-     * @expectedException League\Flysystem\FileNotFoundException
+     * @expectedException \League\Flysystem\FileNotFoundException
      */
     public function testDeleteFileFail($filesystem)
     {
         // Deleting again will thow an exception.
         // It is flysystem core that does that.
+
+        $this->expectException(FileNotFoundException::class);
 
         $this->assertTrue($filesystem->delete($this->filename(8)));
     }
@@ -328,6 +363,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     {
         // Deleting again will thow an exception.
         // It is flysystem core that does that.
+
+        $this->expectException(FileNotFoundException::class);
 
         $this->assertTrue($filesystem->delete($this->filename(8, self::SUBDIR_ONE)));
     }
@@ -358,6 +395,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     {
         // Updating a file that does not exist will throw an exception.
         // It is flysystem core that does that.
+
+        $this->expectException(FileNotFoundException::class);
 
         $filesystem->update($this->filename(15), 'foobar15');
     }
@@ -391,6 +430,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     {
         // Visibility is not supported by this driver.
 
+        $this->expectException(LogicException::class);
+
         $filesystem->setVisibility($this->filename(5), 'public');
     }
 
@@ -404,6 +445,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     public function testGetVisibility($filesystem)
     {
         // Visibility is not supported by this driver.
+
+        $this->expectException(LogicException::class);
 
         $filesystem->getVisibility($this->filename(5));
     }
@@ -470,10 +513,10 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     /**
      * @dataProvider adapterProvider
      */
-    public function testDeleteDir($filesystem)
-    {
-        // TBC
-    }
+    // public function testDeleteDir($filesystem)
+    // {
+    //     // TBC
+    // }
 
     /**
      * @dataProvider adapterProvider
@@ -482,7 +525,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     {
         $allContents = $filesystem->listContents('', true);
 
-        $this->assertInternalType('array', $allContents);
+        $this->assertIsArray($allContents);
 
         // Look for the directories and files we have created.
 
@@ -521,8 +564,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         $directory = dirname($this->filename(3, self::SUBDIR_ONE));
 
         $this->assertContains([
-            'type' => 'dir',
             'path' => $directory,
+            'type' => 'dir',
             'dirname' => (dirname($directory) === '.' ? '' : dirname($directory)),
             'basename' => basename($directory),
             'filename' => basename($directory),
@@ -531,8 +574,8 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         $directory = dirname($this->filename(3, self::SUBDIR_TWO));
 
         $this->assertContains([
-            'type' => 'dir',
             'path' => $directory,
+            'type' => 'dir',
             'dirname' => dirname($directory),
             'basename' => basename($directory),
             'filename' => basename($directory),
@@ -542,7 +585,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
 
         $subdirContents = $filesystem->listContents(self::SUBDIR_TWO, true);
 
-        $this->assertInternalType('array', $subdirContents);
+        $this->assertIsArray($subdirContents);
 
         // The full paths are as for the recursive list, but only comntain the
         // two files in the selected direectory.
@@ -579,7 +622,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // Note that minetype is the mimetype of the API endpoint, and not
         // of the actual file. Some further research may be needed there.
 
-        $this->assertInternalType('int', $filesystem->getTimestamp($this->filename(1))); // Unix timetamp
+        $this->assertIsInt($filesystem->getTimestamp($this->filename(1))); // Unix timetamp
         $this->assertSame(7, $filesystem->getSize($this->filename(1))); // "content"
     }
 
@@ -606,7 +649,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     {
         $stream = $filesystem->readStream($this->filename(1));
 
-        $this->assertInternalType('resource', $stream);
+        $this->assertIsResource($stream);
 
         $this->assertSame(
             'content',

@@ -83,5 +83,10 @@ $url = $filesystem->getAdapter()->getUrl('path/to/my/foo.bar');
 
 ## Testing
 
-There are no tests yet.
-These will be added when time permits.
+Set up `.env` and run live tests:
+
+    composer install
+    vendor/bin/phpunit --testsuite flysystem-azure-live-tests
+
+These will create/delete a few test files and directories in the root
+of the Azure file share.
