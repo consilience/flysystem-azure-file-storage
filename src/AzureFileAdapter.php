@@ -2,40 +2,35 @@
 
 namespace Consilience\Flysystem\Azure;
 
-use League\Flysystem\Adapter\AbstractAdapter;
-use League\Flysystem\Adapter\Polyfill\NotSupportingVisibilityTrait;
-use League\Flysystem\Config;
+use Throwable;
 use League\Flysystem\Util;
-use League\Flysystem\FileNotFoundException;
+use League\Flysystem\Config;
+use League\Flysystem\Visibility;
 
+use League\Flysystem\FileAttributes;
+use League\Flysystem\FilesystemAdapter;
+use League\Flysystem\StorageAttributes;
+use League\Flysystem\DirectoryAttributes;
+// use League\Flysystem\Adapter\Polyfill\NotSupportingVisibilityTrait;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\FileNotFoundException;
+use League\Flysystem\UnableToCheckExistence;
+use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToReadFile;
+use League\Flysystem\UnableToRetrieveMetadata;
 use MicrosoftAzure\Storage\File\Internal\IFile;
-use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesOptions;
-use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesResult;
 
 use MicrosoftAzure\Storage\File\Models\FileProperties;
-use MicrosoftAzure\Storage\File\Models\GetDirectoryPropertiesResult;
-use MicrosoftAzure\Storage\File\Models\CreateFileFromContentOptions;
-
+use MicrosoftAzure\Storage\Common\Models\ServiceOptions;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
+use MicrosoftAzure\Storage\File\Models\CreateFileFromContentOptions;
+use MicrosoftAzure\Storage\File\Models\GetDirectoryPropertiesResult;
+use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesResult;
+use MicrosoftAzure\Storage\File\Models\ListDirectoriesAndFilesOptions;
 
-class AzureFileAdapter extends AbstractAdapter
+class AzureFileAdapter implements FilesystemAdapter
 {
-    use NotSupportingVisibilityTrait;
-
-    /**
-     * @var string
-     */
-    protected $container;
-
-    /**
-     * @var IFile
-     */
-    protected $client;
-
-    /**
-     * @var array
-     */
-    protected $fsConfig;
+    // use NotSupportingVisibilityTrait;
 
     /**
      * @var string[]
@@ -54,13 +49,431 @@ class AzureFileAdapter extends AbstractAdapter
      * @param IFile  $azureClient
      * @param string $container
      */
-    public function __construct(IFile $azureClient, $config = [], $prefix = null)
+    public function __construct(
+        protected IFile $azureClient,
+        protected string $container,
+        protected array $fsConfig = [],
+    )
     {
-        $this->client = $azureClient;
-        $this->container = $config['container'];
-        $this->fsConfig = $config;
-        $this->setPathPrefix($prefix);
+        // $this->container = $fsConfig['container'];
     }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * @throws UnableToWriteFile
+     * @throws FilesystemException
+     */
+    public function write(string $path, string $contents, Config $config): void
+    {
+        $this->upload($path, $contents, $config);
+    }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * @fixme handle exceptions UnableToWriteFile and FilesystemException
+     */
+    public function writeStream(string $path, $resource, Config $config): void
+    {
+        $this->upload($path, $resource, $config);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function read(string $pathName): string
+    {
+        return stream_get_contents($this->readStream($pathName));
+    }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * @throws UnableToReadFile
+     * @throws FilesystemException
+     */
+    public function readStream(string $pathName)
+    {
+        try {
+            $fileResult = $this->azureClient->getFile($this->container, $pathName);
+
+        } catch (ServiceException $exception) {
+            if ($e->getCode() === 404) {
+                throw UnableToReadFile::fromLocation($pathName, 'File not found');
+            }
+
+            throw UnableToReadFile::fromLocation($pathName, $exception->getMessage(), $exception);
+
+        } catch (Throwable $exception) {
+            throw UnableToReadFile::fromLocation($pathName, 'Unexpected error', $exception);
+        }
+
+        // Copy the remote stream to a local stream.
+        // The remote stream does not allow streaming into another remote file.
+        // I means we read the whole remote file, but we are not limited to what can
+        // be held in memory.
+
+        $stream = fopen('php://temp', 'w+');
+        stream_copy_to_stream($fileResult->getContentStream(), $stream);
+        rewind($stream);
+
+        return $stream;
+    }
+
+    /**
+     * @inheritDoc
+     * 
+     * Check if a file exists.
+     */
+    public function fileExists(string $path): bool
+    {
+        try {
+            $this->getFileMetadata($path);
+
+            return true;
+
+        } catch (UnableToCheckExistence $exception) {
+            if ($exception->getCode() === 404) {
+                return false;
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * See if a directory exists.
+     * 
+     * @param string $path
+     * @return boolean
+     * @throws FilesystemException
+     * @throws UnableToCheckExistence
+     */
+    public function directoryExists(string $path): bool
+    {
+        try {
+            $this->getDirectoryMetadata($path);
+
+            return true;
+
+        } catch (UnableToCheckExistence $exception) {
+            if ($exception->getCode() === 404) {
+                return false;
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Get the full metadata for a file.
+     *
+     * @param string $pathName
+     * @return FileAttributes
+     * @throws FilesystemException
+     * @throws UnableToCheckExistence if the file does not exist
+     */
+    protected function getFileMetadata(string $pathName): FileAttributes
+    {
+        try {
+            return $this->normalizeFileProperties(
+                $pathName,
+                $this->azureClient->getFileProperties($this->container, $pathName),
+            );
+
+        } catch (ServiceException $exception) {
+            if ($exception->getCode() === 404) {
+                throw new UnableToCheckExistence($exception->getMessage(), 404);
+            }
+
+            throw new FilesystemException($exception->getMessage());
+
+        } catch (Throwable $exception) {
+            throw new FilesystemException($exception->getMessage());
+        }
+    }
+
+    /**
+     * Get the full metadata for a directory.
+     *
+     * @param string $pathName
+     * @return DirectoryAttributes
+     * @throws FilesystemException
+     * @throws UnableToCheckExistence if the file does not exist
+     */
+    protected function getDirectoryMetadata(string $pathName): DirectoryAttributes
+    {
+        try {
+            return $this->normalizeDirectoryProperties(
+                $pathName,
+                $this->azureClient->getDirectoryProperties($this->container, $pathName),
+            );
+
+        } catch (ServiceException $exception) {
+            if ($exception->getCode() === 404) {
+                throw new UnableToCheckExistence($exception->getMessage(), 404);
+            }
+
+            throw new FilesystemException($exception->getMessage());
+
+        } catch (Throwable $exception) {
+            throw new FilesystemException($exception->getMessage());
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function lastModified(string $path): FileAttributes
+    {
+        return $this->getFileMetadata($path);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function mimeType(string $path): FileAttributes
+    {
+        return $this->getFileMetadata($path);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function fileSize(string $path): FileAttributes
+    {
+        return $this->getFileMetadata($path);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function visibility(string $path): FileAttributes
+    {
+        return $this->getFileMetadata($path);
+    }
+
+    /**
+     * @param string $path
+     * @param string $visibility
+     * @return void
+     * @throws InvalidVisibilityProvided
+     * @throws FilesystemException
+     */
+    public function setVisibility(string $path, string $visibility): void
+    {
+        // Not supported.
+    }
+
+    /**
+     * Constructs a FlySystem FileAttributes object from an Azure FileProperties object.
+     *
+     * @param string $pathName
+     * @return FileAttributes
+     */
+    protected function normalizeFileProperties(
+        $pathName,
+        FileProperties $fileProperties = null,
+    ): FileAttributes
+    {
+        return FileAttributes::fromArray([
+            StorageAttributes::ATTRIBUTE_PATH => $pathName,
+            StorageAttributes::ATTRIBUTE_FILE_SIZE => $fileProperties->getContentLength(),
+            StorageAttributes::ATTRIBUTE_VISIBILITY => Visibility::PRIVATE, // @todo think this through
+            StorageAttributes::ATTRIBUTE_LAST_MODIFIED => $fileProperties->getLastModified()->getTimestamp(),
+            StorageAttributes::ATTRIBUTE_MIME_TYPE => $fileProperties->getContentType(),
+            StorageAttributes::ATTRIBUTE_EXTRA_METADATA => [
+                'eTag' => trim($fileProperties->getETag(), '"'),
+                'contentMD5' => $fileProperties->getContentMD5(),
+                'lastModified' => $fileProperties->getLastModified(),
+                'contentEncoding' => $fileProperties->getContentEncoding(),
+                'contentLanguage' => $fileProperties->getContentLanguage(),
+                'copyID' => $fileProperties->getCopyID(),
+                'copyProgress' => $fileProperties->getCopyProgress(),
+                'copySource' => $fileProperties->getCopySource(),
+                'copyStatus' => $fileProperties->getCopyStatus(),
+                'copyCompletionTime' => $fileProperties->getCopyCompletionTime(),
+                'copyStatusDescription' => $fileProperties->getCopyStatusDescription(),
+                'cacheControl' => $fileProperties->getCacheControl(),
+                'contentDisposition' => $fileProperties->getContentDisposition(),
+                'contentRange' => $fileProperties->getContentRange(),
+                'rangeContentMD5' => $fileProperties->getRangeContentMD5(),
+            ],
+        ]);
+    }
+
+    /**
+     * Constructs a Flysystem DirectoryAttributes from an Azure Directory object.
+     *
+     * @param string $pathName
+     *
+     * @return DirectoryAttributes
+     */
+    protected function normalizeDirectoryProperties(
+        $pathName,
+        GetDirectoryPropertiesResult $directoryProperties = null,
+    ): DirectoryAttributes
+    {
+        return DirectoryAttributes::fromArray([
+            StorageAttributes::ATTRIBUTE_VISIBILITY => Visibility::PRIVATE, // @todo think this through
+            StorageAttributes::ATTRIBUTE_PATH => $pathName,
+            StorageAttributes::ATTRIBUTE_LAST_MODIFIED => $directoryProperties->getLastModified()->getTimestamp(),
+            StorageAttributes::ATTRIBUTE_EXTRA_METADATA => [
+                'lastModified' => $directoryProperties->getLastModified(),
+                'eTag' => trim($directoryProperties->getETag(), '"'),
+            ],
+        ]);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function move(string $source, string $destination, Config $config): void
+    {
+        // There is no rename in the REST API, so we copy
+        // and then delete the original.
+
+        $this->copy($source, $destination, $config);
+        $this->delete($source);
+    }
+
+    /**
+     * @param string $source
+     * @param string $destination
+     * @param Config $config
+     * @return void
+     * @throws UnableToCopyFile
+     * @throws FilesystemException
+     */
+    public function copy(string $source, string $destination, Config $config): void
+    {
+        // The source file must be supplied as the full URL.
+
+        try {
+            $this->azureClient->copyFile(
+                $this->container,
+                $destination,
+                $this->getUrl($source)
+            );
+
+        } catch (Throwable $exception) {
+            throw UnableToCopyFile::fromLocationTo($source, $destination, $exception);
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * @fixme implement FilesystemException with some useful exceptions
+     * @throws UnableToReadFile
+     * @throws FilesystemException (interface)
+     */
+    public function delete(string $path): void
+    {
+        try {
+            $this->azureClient->deleteFile($this->container, $path);
+
+        } catch (ServiceException $exception) {
+            if ($exception->getCode() !== 404) {
+                throw $exception;
+            }
+        }
+    }
+
+    /**
+     * Order of recursive results is root-first.
+     * The result array can be reversed to get depth-first.
+     */
+    protected function getContents($directory, $recursive = false)
+    {
+        // Options include maxResults and prefix.
+        // The prefix is a matching filename prefix, which can be useful to extract
+        // files starting with a given string.
+        // $options->setPrefix('')
+
+        $options = new ListDirectoriesAndFilesOptions();
+
+        $directory = trim($directory, '/');
+
+        $contents = [];
+
+        try {
+            /** @var ListDirectoriesAndFilesResult $listResults */
+
+            $listResults = $this->azureClient->listDirectoriesAndFiles(
+                $this->container,
+                $directory,
+                $options
+            );
+
+        } catch (ServiceException $e) {
+            if ($e->getCode() === 404) {
+                throw new FileNotFoundException($directory, $e->getCode(), $e); // @fixme 
+            }
+
+            throw $e;
+        }
+
+        // Collect the sub-directories within this directory list.
+
+        foreach ($listResults->getDirectories() as $directoryObject) {
+            // Azure does not return any path context, so we add that on.
+            $pathName = trim($directory . '/' . $directoryObject->getName(), '/');
+
+            // @fixme something feels repetitive here, with too many requests.
+            $contents[] = $this->normalizeDirectoryProperties(
+                $pathName,
+                $this->azureClient->getDirectoryProperties($this->container, $pathName),
+            );
+
+            if ($recursive) {
+                $contents = array_merge(
+                    $contents,
+                    $this->getContents($pathName, $recursive)
+                );
+            }
+        }
+
+        // Collect the files.
+
+        // foreach ($listResults->getFiles() as $fileObject) {
+        //     $contents[] = $this->normalizeFileProperties(
+        //         trim($directory . '/' . $fileObject->getName(), '/')
+        //     );
+        // }
+
+        return $contents;
+    }
+
+    /**
+     * {@inheritdoc}
+     * 
+     * @fixme handle FilesystemException
+     */
+    public function listContents($directory = '', $recursive = false): iterable
+    {
+        try {
+            $contents = $this->getContents($directory, $recursive);
+
+        } catch (FileNotFoundException $e) {
+            // Flysystem core is not expecting an exception.
+
+            return Util::emulateDirectories([]);
+        }
+
+        return $contents;
+        return Util::emulateDirectories($contents);
+    }
+
+
+
+//////// FIXED ABOVE HERE ////////
+
+
+
+    public function deleteDirectory(string $path): void { }
+
 
     /**
      * Issue #2 Encode the path parts but not the directory separators.
@@ -72,7 +485,7 @@ class AzureFileAdapter extends AbstractAdapter
     {
         return sprintf(
             '%s%s/%s',
-            (string)$this->client->getPsrPrimaryUri(),
+            (string)$this->azureClient->getPsrPrimaryUri(),
             $this->container,
             implode(
                 '/',
@@ -82,100 +495,6 @@ class AzureFileAdapter extends AbstractAdapter
                 )
             )
         );
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function write($path, $contents, Config $config)
-    {
-        return $this->upload($path, $contents, $config);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function writeStream($path, $resource, Config $config)
-    {
-        return $this->upload($path, $resource, $config);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function update($path, $contents, Config $config)
-    {
-        return $this->upload($path, $contents, $config);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function updateStream($path, $resource, Config $config)
-    {
-        return $this->upload($path, $resource, $config);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function rename($sourcePath, $newPath)
-    {
-        // There is no rename in the REST API, so we copy
-        // and then delete the original.
-
-        if ($this->copy($sourcePath, $newPath)) {
-            return $this->delete($sourcePath);
-        }
-
-        return false;
-    }
-
-    public function copy($sourcePath, $newPath)
-    {
-        $sourceLocation = $this->applyPathPrefix($sourcePath);
-        $newLocation = $this->applyPathPrefix($newPath);
-
-        // The source file must be supplied as the full URL.
-
-        try {
-            $this->client->copyFile(
-                $this->container,
-                $newLocation,
-                $this->getUrl($sourceLocation)
-            );
-        } catch (ServiceException $e) {
-            if ($e->getCode() !== 404) {
-                throw $e;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function delete($path)
-    {
-        $location = $this->applyPathPrefix($path);
-
-        try {
-            $this->client->deleteFile($this->container, $location);
-        } catch (ServiceException $e) {
-            if ($e->getCode() !== 404) {
-                throw $e;
-            }
-
-            // CHECKME: If the file could not be found, then should it
-            // not still be considered a successful deletion?
-
-            return false;
-        }
-
-        return true;
     }
 
     /**
@@ -196,6 +515,7 @@ class AzureFileAdapter extends AbstractAdapter
 
             try {
                 $listResults = $this->getContents($location, true);
+
             } catch (FileNotFoundException $e) {
                 // If the directory we are trying to get the contents of does
                 // not exist, then the desired state is reached; we want it gone
@@ -234,12 +554,11 @@ class AzureFileAdapter extends AbstractAdapter
      * @return bool true if the directory was deleted; false if not found
      * @throws ServiceException
      */
-    protected function deleteEmptyDirectory($dirname)
+    protected function deleteEmptyDirectory($path)
     {
-        $location = $this->applyPathPrefix($dirname);
-
         try {
-            $this->client->deleteDirectory($this->container, $location);
+            $this->azureClient->deleteDirectory($this->container, $path);
+
         } catch (ServiceException $e) {
             if ($e->getCode() !== 404) {
                 throw $e;
@@ -253,267 +572,72 @@ class AzureFileAdapter extends AbstractAdapter
 
     /**
      * {@inheritdoc}
+     * @throws UnableToCreateDirectory
+     * @throws FilesystemException
      */
-    public function createDir($dirname, Config $config)
+    public function createDirectory(string $path, Config $config): void
     {
-        $location = trim($this->applyPathPrefix($dirname), '/');
+        // $location = trim($this->applyPathPrefix($dirname), '/');
 
-        if ($location === '' || $location === '.') {
+        if ($path === '' || $path === '.') {
             // There is no directory to create.
 
-            return ['path' => $dirname, 'type' => 'dir'];
+            // return ['path' => $path, 'type' => 'dir'];
         }
 
         // We need to recursively create the directories if we have a path.
 
-        $locationParts = explode('/', $location);
+        $locationParts = explode('/', $path);
 
         for ($i = 1; $i <= count($locationParts); $i++) {
             $partialDirectory = implode('/', array_slice($locationParts, 0, $i));
 
-            if (! $this->hasDirectory($partialDirectory)) {
-                $this->client->createDirectory($this->container, $partialDirectory, null); // TODO: options
+            if (! $this->directoryExists($partialDirectory)) {
+                $this->azureClient->createDirectory($this->container, $partialDirectory, null); // TODO: options
             }
         }
 
-        return ['path' => $dirname, 'type' => 'dir'];
+        // return ['path' => $path, 'type' => 'dir'];
     }
 
     /**
      * {@inheritdoc}
      */
-    public function has($path)
-    {
-        $location = $this->applyPathPrefix($path);
+    // public function has($path)
+    // {
+    //     $location = $this->applyPathPrefix($path);
 
-        // Try the resource as a file first.
+    //     // Try the resource as a file first.
 
-        if ($this->hasFile($location)) {
-            return true;
-        }
+    //     if ($this->hasFile($location)) {
+    //         return true;
+    //     }
 
-        // Fallback: try the resource as a directory.
+    //     // Fallback: try the resource as a directory.
 
-        return $this->hasDirectory($location);
-    }
+    //     return $this->directoryExists($location);
+    // }
 
     /**
-     * See if a file exists.
-     * The directory prefix has already been added.
+     * Removed as a core requirement for Flysystem 3.
+     * May be removed if no longer used internally.
+     *
+     * @param string $path
+     * @return FileAttributes|DirectoryAttributes
+     * @throws UnableToRetrieveMetadata
      */
-    protected function hasFile($location)
+    protected function getMetadata(string $path)
     {
         try {
-            $this->client->getFileProperties($this->container, $location);
+            return $this->getFileMetadata($path);
 
-            return true;
-        } catch (ServiceException $e) {
-            if ($e->getCode() !== 404) {
-                throw $e;
+        } catch (UnableToCheckExistence $exception) {
+            if ($exception->getCode() !== 404) {
+                throw new UnableToRetrieveMetadata($exception->getMessage());
             }
         }
 
-        return false;
-    }
-
-    /**
-     * See if a directory exists.
-     * The directory prefix has already been added.
-     */
-    protected function hasDirectory($location)
-    {
-        try {
-            $this->client->getDirectoryProperties($this->container, $location);
-        } catch (ServiceException $e) {
-            if ($e->getCode() !== 404) {
-                throw $e;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function read($pathName)
-    {
-        $result = $this->readStream($pathName);
-
-        $result['contents'] = stream_get_contents($result['stream']);
-
-        unset($result['stream']);
-
-        return $result;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function readStream($pathName)
-    {
-        $location = $this->applyPathPrefix($pathName);
-
-        try {
-            $fileResult = $this->client->getFile($this->container, $location);
-        } catch (ServiceException $e) {
-            if ($e->getCode() === 404) {
-                throw new FileNotFoundException($pathName, $e->getCode(), $e);
-            }
-
-            throw $e;
-        }
-
-        // Copy the remote stream to a local stream.
-        // The remote stream does not allow streaming into another remote file.
-        // I means we read the whole remote file, but we are not limited to what can
-        // be held in memory.
-
-        $stream = fopen('php://temp', 'w+');
-        stream_copy_to_stream($fileResult->getContentStream(), $stream);
-        rewind($stream);
-
-        return array_merge(
-            $this->normalizeFileProperties($pathName, $fileResult->getProperties()),
-            [
-                'stream' => $stream,
-            ]
-        );
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function listContents($directory = '', $recursive = false)
-    {
-        try {
-            $contents = $this->getContents($directory, $recursive);
-        } catch (FileNotFoundException $e) {
-            // Flysytem core is not expecting an exception.
-
-            return Util::emulateDirectories([]);
-        }
-
-        return Util::emulateDirectories($contents);
-    }
-
-    /**
-     * Order of recursive results is root-first.
-     * The result array can be reversed to get depth-first.
-     */
-    protected function getContents($directory, $recursive = false)
-    {
-        // Options include maxResults and prefix.
-        // The prefix is a matching filename prefix, which can be useful to extract
-        // files starting with a given string.
-        // $options->setPrefix('')
-
-        $options = new ListDirectoriesAndFilesOptions();
-
-        $directory = trim($directory, '/');
-
-        $location = $this->applyPathPrefix($directory);
-
-        $contents = [];
-
-        try {
-            /** @var ListDirectoriesAndFilesResult $listResults */
-
-            $listResults = $this->client->listDirectoriesAndFiles(
-                $this->container,
-                $location,
-                $options
-            );
-        } catch (ServiceException $e) {
-            if ($e->getCode() === 404) {
-                throw new FileNotFoundException($directory, $e->getCode(), $e);
-            }
-
-            throw $e;
-        }
-
-        // Collect the directories.
-
-        foreach ($listResults->getDirectories() as $directoryObject) {
-            // Azure does not return any path context, so we add that on.
-            $pathName = trim($directory . '/' . $directoryObject->getName(), '/');
-
-            $contents[] = $this->normalizeDirectoryProperties($pathName);
-
-            if ($recursive) {
-                $contents = array_merge(
-                    $contents,
-                    $this->getContents($pathName, $recursive)
-                );
-            }
-        }
-
-        // Collect the files.
-
-        foreach ($listResults->getFiles() as $fileObject) {
-            $contents[] = $this->normalizeFileProperties(
-                trim($directory . '/' . $fileObject->getName(), '/')
-            );
-        }
-
-        return $contents;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getMetadata($path)
-    {
-        $location = $this->applyPathPrefix($path);
-
-        try {
-            /** @var \MicrosoftAzure\Storage\File\Models\FileProperties $result */
-            $result = $this->client->getFileProperties($this->container, $location);
-
-            return $this->normalizeFileProperties(
-                $path,
-                $result
-            );
-        } catch (ServiceException $e) {
-            if ($e->getCode() !== 404) {
-                throw $e;
-            }
-
-            /** @var \MicrosoftAzure\Storage\File\Models\GetDirectoryPropertiesResult $result */
-            $result = $this->client->getDirectoryProperties($this->container, $location);
-
-            return $this->normalizeDirectoryProperties(
-                $path,
-                $result
-            );
-        }
-
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getSize($path)
-    {
-        return $this->getMetadata($path);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getMimetype($path)
-    {
-        return $this->getMetadata($path);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getTimestamp($path)
-    {
-        return $this->getMetadata($path);
+        return $this->getDirectoryMetadata($path);
     }
 
     /**
@@ -542,60 +666,6 @@ class AzureFileAdapter extends AbstractAdapter
     }
 
     /**
-     * Builds the normalized output array from a Directory object.
-     *
-     * @param string $pathName
-     *
-     * @return array
-     */
-    protected function normalizeDirectoryProperties(
-        $pathName,
-        GetDirectoryPropertiesResult $directoryProperties = null
-    ) {
-        // The library does not return the path prefixes, so there is no need to remove it.
-
-        $properties = [
-            'path' => $pathName, //$this->removePathPrefix($pathName),
-            'type' => 'dir',
-        ];
-
-        if ($directoryProperties) {
-            $properties['timestamp'] = $directoryProperties->getLastModified()->getTimestamp();
-            $properties['etag'] = trim($directoryProperties->getETag(), '"');
-        }
-
-        return $properties;
-    }
-
-    /**
-     * Builds the normalized output array from a Directory object.
-     *
-     * @param string $pathName
-     *
-     * @return array
-     */
-    protected function normalizeFileProperties($pathName, FileProperties $fileProperties = null)
-    {
-        //$pathName = $this->removePathPrefix($pathName); // !!!!
-
-        $properties = [
-            'type' => 'file',
-            'path' => $pathName,
-            'dirname' => Util::dirname($pathName),
-        ];
-
-        if ($fileProperties) {
-            $properties['size'] = $fileProperties->getContentLength();
-            $properties['timestamp'] = $fileProperties->getLastModified()->getTimestamp();
-
-            $properties['mimetype'] = $fileProperties->getContentType();
-            $properties['etag'] = trim($fileProperties->getETag(), '"');
-        }
-
-        return $properties;
-    }
-
-    /**
      * Retrieves content streamed by Azure into a string.
      *
      * @param resource $resource
@@ -611,49 +681,50 @@ class AzureFileAdapter extends AbstractAdapter
      * Upload a file.
      * This will overwrite a file if it already exists.
      *
-     * @param string           $path     Path
+     * @param string           $path
      * @param string|resource  $contents Either a string or a stream.
-     * @param Config           $config   Config
-     *
-     * @return array|false
+     * @param Config           $config
+     * @return StorageAttributes
      */
-    protected function upload($path, $contents, Config $config)
+    protected function upload(string $path, $contents, Config $config): StorageAttributes
     {
         // Make sure the directory has been created first.
+        // @todo Make sure existing directory errors are hidden,
+        // but other failures are not.
 
-        $this->createDir(Util::dirname($path), $config);
+        $this->createDir(dirname($path), $config);
 
-        $location = $this->applyPathPrefix($path);
+        // The result is void, or an exception.
+        // @todo catch exceptions and map them to flysystem exceptions
 
-        // The result will be null, or an exception.
-
-        $this->client->createFileFromContent(
+        $this->azureClient->createFileFromContent(
             $this->container,
-            $location,
+            $path,
             $contents,
-            $this->getOptionsFromConfig($config)
+            $this->getOptionsFromConfig($config),
         );
 
         // We need to fetch the file metadata as a separate request.
 
         $result = $this->getMetadata($path);
 
-        return array_merge($result, ['contents' => $contents]);
+        return $result;
     }
 
     /**
-     * Retrieve options from a Config instance.
+     * Retrieve options from a Flysystem Config instance and put them
+     * into an Azure create-file options instance.
      *
      * @param Config $config
      *
      * @return CreateBlobOptions
      */
-    protected function getOptionsFromConfig(Config $config)
+    protected function getOptionsFromConfig(Config $config): CreateFileFromContentOptions
     {
         $options = new CreateFileFromContentOptions();
 
         foreach (static::$metaOptions as $option) {
-            if (! $config->has($option)) {
+            if ($config->get($option) === null) {
                 continue;
             }
 

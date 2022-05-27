@@ -6,13 +6,23 @@ use Consilience\Flysystem\Azure\AzureFileAdapter;
 use phpseclib\System\SSH\Agent;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
-
+use League\Flysystem\AdapterTestUtilities\FilesystemAdapterTestCase;
+use League\Flysystem\FilesystemAdapter;
 use MicrosoftAzure\Storage\File\Internal\IFile;
 use MicrosoftAzure\Storage\File\FileRestProxy;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
-class AzureFileStorageAdapterTest extends TestCase
+class AzureFileStorageAdapterTest extends FilesystemAdapterTestCase
 {
+    protected static function createFilesystemAdapter(): FilesystemAdapter
+    {
+        $mockAzureClient = Mockery::mock(FileRestProxy::class)->makePartial();
+
+        return new AzureFileAdapter($mockAzureClient, 'foo-container', [
+            'container' => 'foo-container',
+        ]);
+    }
+
     // public function adapterProvider()
     // {
     //     // Mock needs to be an instance of interface MicrosoftAzure\Storage\File\Internal\IFile
