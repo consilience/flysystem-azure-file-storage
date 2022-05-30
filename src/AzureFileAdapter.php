@@ -215,10 +215,10 @@ class AzureFileAdapter implements FilesystemAdapter
                 throw new UnableToCheckExistence($exception->getMessage(), 404);
             }
 
-            throw new FilesystemException($exception->getMessage());
+            throw new UnableToCheckExistence($exception->getMessage());
 
         } catch (Throwable $exception) {
-            throw new FilesystemException($exception->getMessage());
+            throw new UnableToCheckExistence($exception->getMessage());
         }
     }
 
@@ -437,11 +437,14 @@ class AzureFileAdapter implements FilesystemAdapter
 
         // Collect the files.
 
-        // foreach ($listResults->getFiles() as $fileObject) {
-        //     $contents[] = $this->normalizeFileProperties(
-        //         trim($directory . '/' . $fileObject->getName(), '/')
-        //     );
-        // }
+        foreach ($listResults->getFiles() as $fileObject) {
+            $pathName = trim($directory . '/' . $fileObject->getName(), '/');
+
+            $contents[] = $this->normalizeFileProperties(
+                $pathName,
+                $this->azureClient->getFileProperties($this->container, $pathName),
+            );
+        }
 
         return $contents;
     }
@@ -463,7 +466,6 @@ class AzureFileAdapter implements FilesystemAdapter
         }
 
         return $contents;
-        return Util::emulateDirectories($contents);
     }
 
 
@@ -582,7 +584,7 @@ class AzureFileAdapter implements FilesystemAdapter
         if ($path === '' || $path === '.') {
             // There is no directory to create.
 
-            // return ['path' => $path, 'type' => 'dir'];
+            return;
         }
 
         // We need to recursively create the directories if we have a path.
@@ -692,7 +694,7 @@ class AzureFileAdapter implements FilesystemAdapter
         // @todo Make sure existing directory errors are hidden,
         // but other failures are not.
 
-        $this->createDir(dirname($path), $config);
+        $this->createDirectory(dirname($path), $config);
 
         // The result is void, or an exception.
         // @todo catch exceptions and map them to flysystem exceptions

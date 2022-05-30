@@ -225,29 +225,37 @@ class AzureFileStorageAdapterLiveTest extends TestCase
     }
 
     /**
+     * has() is back for flysystem 3.0
+     * 
      * @dataProvider adapterProvider
      */
-    public function testExists($filesystem)
+    public function testHasSuccess($filesystem)
     {
         // Create file and confirm it exists.
 
         $filesystem->write($this->filename(1), 'content');
 
         $this->assertTrue($filesystem->fileExists($this->filename(1)));
+        $this->assertTrue($filesystem->has($this->filename(1)));
 
         // Create files two levels of subdirectory they exist.
 
         $filesystem->write($this->filename(2, self::SUBDIR_ONE), 'content');
         $this->assertTrue($filesystem->fileExists($this->filename(2, self::SUBDIR_ONE)));
+        $this->assertTrue($filesystem->has($this->filename(2, self::SUBDIR_ONE)));
 
-        $filesystem->put($this->filename(3, self::SUBDIR_TWO), 'content');
+        $filesystem->write($this->filename(3, self::SUBDIR_TWO), 'content');
+        $this->assertTrue($filesystem->fileExists($this->filename(3, self::SUBDIR_TWO)));
         $this->assertTrue($filesystem->has($this->filename(3, self::SUBDIR_TWO)));
 
         // Some consistency for directories.
         // This driver will treat a directory as a file when checking if it exists.
 
         $this->assertTrue($filesystem->directoryExists(self::SUBDIR_ONE));
+        $this->assertTrue($filesystem->has(self::SUBDIR_ONE));
+
         $this->assertTrue($filesystem->directoryExists(self::SUBDIR_TWO));
+        $this->assertTrue($filesystem->has(self::SUBDIR_TWO));
     }
 
     /**
@@ -541,102 +549,157 @@ class AzureFileStorageAdapterLiveTest extends TestCase
      */
     public function testListContents($filesystem)
     {
-        $allContents = $filesystem->listContents('', true);
+        $directoryListing = $filesystem->listContents('', true);
         
-        $this->assertIsIterable($allContents);
-        $this->assertInstanceOf(DirectoryListing::class, $allContents);
+        $this->assertIsIterable($directoryListing);
+        $this->assertInstanceOf(DirectoryListing::class, $directoryListing);
 
-        // @fixme the filters are not working, so something is up.
-        // var_dump($allContents->filter(fn (StorageAttributes $attributes) => $attributes->isDir())); exit;
+        $allDirectories = $directoryListing->filter(fn (StorageAttributes $attributes) => $attributes->isDir())->toArray();
+        $allFiles = $directoryListing->filter(fn (StorageAttributes $attributes) => $attributes->isFile())->toArray();
+
         // Look for the directories and files we have created.
 
-        return;
+        // $allContents = $directoryListing->toArray();
+
+        // var_dump($allFiles);
 
         // Files created in testHas() at three levels
 
-        $this->assertContains([
-            'type' => 'file',
-            'path' => $this->filename(1),
-            'dirname' => '',
-            'basename' => $this->filename(1),
-            'extension' => 'txt',
-            'filename' => basename($this->filename(1), '.txt'),
-        ], $allContents);
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isFile())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $this->filename(1))
+                ->toArray()
+        );
 
-        $this->assertContains([
-            'type' => 'file',
-            'path' => $this->filename(2, self::SUBDIR_ONE),
-            'dirname' => dirname($this->filename(2, self::SUBDIR_ONE)),
-            'basename' => $this->filename(2),
-            'extension' => 'txt',
-            'filename' => basename($this->filename(2), '.txt'),
-        ], $allContents);
+        // $this->assertContains([
+        //     'type' => 'file',
+        //     'path' => $this->filename(1),
+        //     'dirname' => '',
+        //     'basename' => $this->filename(1),
+        //     'extension' => 'txt',
+        //     'filename' => basename($this->filename(1), '.txt'),
+        // ], $allContents);
 
-        $this->assertContains([
-            'type' => 'file',
-            'path' => $this->filename(3, self::SUBDIR_TWO),
-            'dirname' => dirname($this->filename(3, self::SUBDIR_TWO)),
-            'basename' => $this->filename(3),
-            'extension' => 'txt',
-            'filename' => basename($this->filename(3), '.txt'),
-        ], $allContents);
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isFile())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $this->filename(2, self::SUBDIR_ONE))
+                ->toArray()
+        );
+
+        // $this->assertContains([
+        //     'type' => 'file',
+        //     'path' => $this->filename(2, self::SUBDIR_ONE),
+        //     'dirname' => dirname($this->filename(2, self::SUBDIR_ONE)),
+        //     'basename' => $this->filename(2),
+        //     'extension' => 'txt',
+        //     'filename' => basename($this->filename(2), '.txt'),
+        // ], $allContents);
+
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isFile())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $this->filename(3, self::SUBDIR_TWO))
+                ->toArray()
+        );
+
+        // $this->assertContains([
+        //     'type' => 'file',
+        //     'path' => $this->filename(3, self::SUBDIR_TWO),
+        //     'dirname' => dirname($this->filename(3, self::SUBDIR_TWO)),
+        //     'basename' => $this->filename(3),
+        //     'extension' => 'txt',
+        //     'filename' => basename($this->filename(3), '.txt'),
+        // ], $allContents);
 
         // Directories creates in testHas()
         // TODO: check these meet the specs.
 
         $directory = dirname($this->filename(3, self::SUBDIR_ONE));
 
-        $this->assertContains([
-            'path' => $directory,
-            'type' => 'dir',
-            'dirname' => (dirname($directory) === '.' ? '' : dirname($directory)),
-            'basename' => basename($directory),
-            'filename' => basename($directory),
-        ], $allContents);
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isDir())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $directory)
+                ->toArray()
+        );
+
+        // $this->assertContains([
+        //     'path' => $directory,
+        //     'type' => 'dir',
+        //     'dirname' => (dirname($directory) === '.' ? '' : dirname($directory)),
+        //     'basename' => basename($directory),
+        //     'filename' => basename($directory),
+        // ], $allContents);
 
         $directory = dirname($this->filename(3, self::SUBDIR_TWO));
 
-        $this->assertContains([
-            'path' => $directory,
-            'type' => 'dir',
-            'dirname' => dirname($directory),
-            'basename' => basename($directory),
-            'filename' => basename($directory),
-        ], $allContents);
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isDir())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $directory)
+                ->toArray()
+        );
+
+        // $this->assertContains([
+        //     'path' => $directory,
+        //     'type' => 'dir',
+        //     'dirname' => dirname($directory),
+        //     'basename' => basename($directory),
+        //     'filename' => basename($directory),
+        // ], $allContents);
 
         // Start a level or two up.
 
         $subdirContents = $filesystem->listContents(self::SUBDIR_TWO, true);
 
-        $this->assertIsArray($subdirContents);
+        $this->assertIsIterable($subdirContents);
+        $this->assertInstanceOf(DirectoryListing::class, $subdirContents);
 
-        // The full paths are as for the recursive list, but only comntain the
-        // two files in the selected direectory.
+        // The full paths are as for the recursive list, but only contain the
+        // two files in the selected directory.
 
-        $this->assertCount(2, $subdirContents);
+        $this->assertCount(2, $subdirContents->toArray());
 
-        $this->assertContains([
-            'type' => 'file',
-            'path' => $this->filename(3, self::SUBDIR_TWO),
-            'dirname' => dirname($this->filename(3, self::SUBDIR_TWO)),
-            'basename' => $this->filename(3),
-            'extension' => 'txt',
-            'filename' => basename($this->filename(3), '.txt'),
-        ], $allContents);
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isFile())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $this->filename(3, self::SUBDIR_TWO))
+                ->toArray()
+        );
+
+        // $this->assertContains([
+        //     'type' => 'file',
+        //     'path' => $this->filename(3, self::SUBDIR_TWO),
+        //     'dirname' => dirname($this->filename(3, self::SUBDIR_TWO)),
+        //     'basename' => $this->filename(3),
+        //     'extension' => 'txt',
+        //     'filename' => basename($this->filename(3), '.txt'),
+        // ], $allContents);
 
         // File 7 from testWriteDirTwo()
 
-        $this->assertContains([
-            'type' => 'file',
-            'path' => $this->filename(7, self::SUBDIR_TWO),
-            'dirname' => dirname($this->filename(7, self::SUBDIR_TWO)),
-            'basename' => $this->filename(7),
-            'extension' => 'txt',
-            'filename' => basename($this->filename(7), '.txt'),
-        ], $allContents);
+        $this->assertCount(1, 
+            $directoryListing
+                ->filter(fn (StorageAttributes $attributes) => $attributes->isFile())
+                ->filter(fn (StorageAttributes $attributes) => $attributes->path() === $this->filename(7, self::SUBDIR_TWO))
+                ->toArray()
+        );
+
+        // $this->assertContains([
+        //     'type' => 'file',
+        //     'path' => $this->filename(7, self::SUBDIR_TWO),
+        //     'dirname' => dirname($this->filename(7, self::SUBDIR_TWO)),
+        //     'basename' => $this->filename(7),
+        //     'extension' => 'txt',
+        //     'filename' => basename($this->filename(7), '.txt'),
+        // ], $allContents);
     }
 
     /**
+     * @todo add all other metadata calls here
+     * 
      * @dataProvider adapterProvider
      */
     public function testGetMeta($filesystem)
@@ -645,15 +708,18 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         // Note that minetype is the mimetype of the API endpoint, and not
         // of the actual file. Some further research may be needed there.
 
-        $this->assertIsInt($filesystem->getTimestamp($this->filename(1))); // Unix timetamp
-        $this->assertSame(7, $filesystem->getSize($this->filename(1))); // "content"
+        $this->assertIsInt($filesystem->lastModified($this->filename(1))); // Unix timetamp
+        $this->assertSame(7, $filesystem->fileSize($this->filename(1))); // "content"
     }
 
     /**
      * @dataProvider adapterProvider
      */
-    public function testRead($filesystem)
+    public function testReadContent($filesystem)
     {
+        $filesystem->write($this->filename(1), 'content');
+        $filesystem->writeStream($this->filename(7, self::SUBDIR_TWO), $this->stream('stream7'));
+
         $this->assertSame(
             'content',
             $filesystem->read($this->filename(1))
@@ -670,26 +736,26 @@ class AzureFileStorageAdapterLiveTest extends TestCase
      */
     public function testReadStream($filesystem)
     {
+        $filesystem->write($this->filename(1), 'content-stream');
+
         $stream = $filesystem->readStream($this->filename(1));
 
         $this->assertIsResource($stream);
 
         $this->assertSame(
-            'content',
+            'content-stream',
             stream_get_contents($stream)
         );
 
         // Copy a file by stream.
 
-        $this->assertTrue(
-            $filesystem->writeStream(
-                $this->filename(10),
-                $filesystem->readStream($this->filename(1))
-            )
+        $filesystem->writeStream(
+            $this->filename(10),
+            $filesystem->readStream($this->filename(1))
         );
 
         $this->assertSame(
-            'content',
+            'content-stream',
             $filesystem->read($this->filename(10))
         );
     }
