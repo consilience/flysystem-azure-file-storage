@@ -1,6 +1,6 @@
 <?php
 
-namespace Consil\Flysystem\Azure;
+namespace Consilience\Flysystem\Azure;
 
 /**
  * @deprecated deprecated since version 1.0.1

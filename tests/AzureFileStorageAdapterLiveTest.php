@@ -1,23 +1,14 @@
 <?php
 
 use Dotenv\Dotenv;
-// use LogicException;
-use phpseclib\System\SSH\Agent;
 use PHPUnit\Framework\TestCase;
 use League\Flysystem\Filesystem;
 use League\Flysystem\DirectoryListing;
 use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\FilesystemAdapter;
 use League\Flysystem\StorageAttributes;
-use Psr\Http\Message\ResponseInterface;
-use League\Flysystem\FilesystemOperator;
-use League\Flysystem\FileExistsException;
-use League\Flysystem\FilesystemInterface;
-use League\Flysystem\FileNotFoundException;
 use MicrosoftAzure\Storage\File\FileRestProxy;
-use MicrosoftAzure\Storage\File\Internal\IFile;
 use Consilience\Flysystem\Azure\AzureFileAdapter;
-use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 
 class AzureFileStorageAdapterLiveTest extends TestCase
 {
@@ -62,7 +53,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         );
     }
 
-    protected static function createFilesystemAdapter(): FilesystemAdapter
+    protected static function createFilesystemAdapter(string $prefix = ''): FilesystemAdapter
     {
         // $mockAzureClient = Mockery::mock(FileRestProxy::class)->makePartial();
 
@@ -93,13 +84,14 @@ class AzureFileStorageAdapterLiveTest extends TestCase
 
         $fileService = FileRestProxy::createFileService(
             $connectionString,
-            []
+            [],
         );
 
         return new AzureFileAdapter(
             $fileService,
             $azureFileStorageShareName,
-            $config
+            $config,
+            $prefix,
         );
     }
 
@@ -111,60 +103,20 @@ class AzureFileStorageAdapterLiveTest extends TestCase
      */
     public function adapterProvider()
     {
-        // @fixme why does this work here, but not in the setup?
-        // It's like the environment is cleared after every iteration of a test
-        // but only set up prior to the first iteration.
-
-        // Assert that required environment variables are set.
-        // Will be bool (false) if not set at all.
-
-        // $azureFileStorageAccount = getenv('AZURE_FILE_STORAGE_ACCOUNT');
-        // $azureFileStorageAccessKey = getenv('AZURE_FILE_STORAGE_ACCESS_KEY');
-        // $azureFileStorageShareName = getenv('AZURE_FILE_STORAGE_SHARE_NAME');
-
-        // $connectionString = sprintf(
-        //     'DefaultEndpointsProtocol=https;AccountName=%s;AccountKey=%s',
-        //     $azureFileStorageAccount,
-        //     $azureFileStorageAccessKey
-        // );
-
-        // $config = [
-        //     'endpoint' => $connectionString,
-        //     'container' => $azureFileStorageShareName,
-        //     // Optional to prevent directory deletion recursively deleting
-        //     // all descendant files and direcories.
-        //     //'disableRecursiveDelete' => true,
-        // ];
-
-        // $fileService = FileRestProxy::createFileService(
-        //     $connectionString,
-        //     []
-        // );
-
         // FilesystemOperator
         $filesystem = new Filesystem(static::createFilesystemAdapter());
+        $filesystemPrefixOne = new Filesystem(static::createFilesystemAdapter(self::PREFIX_ONE));
+        $filesystemPrefixTwo = new Filesystem(static::createFilesystemAdapter(self::PREFIX_TWO));
 
-        // $filesystemPrefixOne = new Filesystem(new AzureFileAdapter(
-        //     $fileService,
-        //     $azureFileStorageShareName,
-        //     $config,
-        //     self::PREFIX_ONE
-        // ));
-
-        // $filesystemPrefixTwo = new Filesystem(new AzureFileAdapter(
-        //     $fileService,
-        //     $azureFileStorageShareName,
-        //     $config,
-        //     self::PREFIX_TWO
-        // ));
-
-        // The data provider supports no prefix, a single level prefix,
-        // and a two-level prefix.
+        // The data provider supplies:
+        // (1) no prefix;
+        // (2) a single level prefix; and
+        // (3) a two-level prefix.
 
         return [
             'no-prefix' => ['filesystem' => $filesystem],
-            // 'single-prefix' => ['filesystem' => $filesystemPrefixOne],
-            // 'double-prefix' => ['filesystem' => $filesystemPrefixTwo],
+            'single-prefix' => ['filesystem' => $filesystemPrefixOne],
+            'double-prefix' => ['filesystem' => $filesystemPrefixTwo],
         ];
     }
 
@@ -290,7 +242,7 @@ class AzureFileStorageAdapterLiveTest extends TestCase
         $this->assertIsInt($filesystem->lastModified($this->filename(5)));
         $this->assertIsString($filesystem->mimeType($this->filename(5)));
         $this->assertSame(7, $filesystem->fileSize($this->filename(5)));
-        $this->assertSame('private', $filesystem->visibility($this->filename(5)));
+        $this->assertSame('private', $filesystem->visibility($this->filename(5))); // Not really supported yet.
 
         $filesystem->delete($this->filename(5));
     }
